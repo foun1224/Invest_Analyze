@@ -1,0 +1,38 @@
+name: chipflow-daily
+on:
+  schedule:
+    # 台北盤後(收盤+法人/期貨資料出齊後)。cron 為 UTC;09:30 UTC ≈ 台北 17:30。
+    - cron: "30 9 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "分析日期 YYYY-MM-DD(留空=今天)"
+        required: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TZ: Asia/Taipei
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - name: Resolve date
+        id: d
+        run: echo "date=${{ github.event.inputs.date || '' }}" >> "$GITHUB_OUTPUT"
+      - name: Run daily
+        run: |
+          DATE="${{ steps.d.outputs.date }}"
+          [ -z "$DATE" ] && DATE="$(date +%F)"
+          python -m chipflow.cli run-daily --date "$DATE"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chipflow-out
+          path: out/
+          retention-days: 30

@@ -1,0 +1,35 @@
+# EKS CronJob(由 ArgoCD 管理)。與 GitHub Actions 擇一為單一事實來源。
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: chipflow-daily
+  labels: { app: chipflow }
+spec:
+  # 台北 17:30 = UTC 09:30
+  schedule: "30 9 * * 1-5"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 1800
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: chipflow
+              image: REGISTRY/chipflow:latest   # TODO: 換成你的 ECR image
+              args: ["run-daily", "--date", "$(DATE)"]
+              env:
+                - { name: TZ, value: Asia/Taipei }
+                - name: ANTHROPIC_API_KEY
+                  valueFrom: { secretKeyRef: { name: chipflow-secrets, key: anthropic-api-key } }
+              volumeMounts:
+                - { name: out, mountPath: /app/out }
+              resources:
+                requests: { cpu: "250m", memory: "512Mi" }
+                limits: { cpu: "1", memory: "1Gi" }
+          volumes:
+            - name: out
+              persistentVolumeClaim: { claimName: chipflow-out }

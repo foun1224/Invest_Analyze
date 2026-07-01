@@ -1,0 +1,49 @@
+# chipflow 設定範例。複製為 config/config.yaml 後調整。
+timezone: Asia/Taipei
+
+window:
+  trading_days: 32          # handoff 涵蓋的交易日數
+
+http:
+  min_interval_sec: 0.25    # 對 TWSE/TAIFEX 每請求最小間隔
+  timeout_sec: 25
+  max_retries: 3
+  user_agent: "Mozilla/5.0 (chipflow)"
+
+sources:
+  twse: true
+  taifex: true
+  external: true            # Yahoo
+
+external_symbols:           # 可增減
+  sox: "^SOX"
+  ndx: "^IXIC"
+  tsm: "TSM"
+  t2330: "2330.TW"
+  otc: "^TWOII"
+  dxy: "DX-Y.NYB"
+  tnx: "^TNX"
+  vix: "^VIX"
+  usdtwd: "USDTWD=X"
+
+# derive 訊號門檻(初始值,建議觀察 N 日分佈後收斂)
+signal_thresholds:
+  foreign_fut_oi_daily_spike: 6000      # 外資台指期單日 OI 變化(口)超過→告警
+  margin_fin_high_watermark_yi: 6000    # 融資餘額(億元)警戒
+  sox_ma_days: 20                       # 費半均線天數
+  pcr_bearish: 150
+  pcr_bullish: 100
+
+llm:
+  provider: anthropic        # anthropic | openai | local
+  model: claude-opus-4-8     # 由 analyze.py 對應各 provider
+  max_tokens: 4096
+  # 金鑰走 .env(見 .env.example)
+
+output:
+  dir: ./out                 # handoff.json / 研判 / 面板 輸出目錄
+  render_html: true
+
+alert:
+  enabled: false
+  webhook_url: ""            # Slack/Teams incoming webhook
