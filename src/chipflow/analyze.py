@@ -39,7 +39,10 @@ def _anthropic(prompt: str, model: str, max_tokens: int) -> str:
         import anthropic
     except ImportError as e:
         raise RuntimeError("pip install anthropic") from e
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not key:
+        raise RuntimeError("ANTHROPIC_API_KEY 未設定，請在 .env 或環境變數中設定")
+    client = anthropic.Anthropic(api_key=key)
     msg = client.messages.create(
         model=model, max_tokens=max_tokens,
         messages=[{"role": "user", "content": prompt}])

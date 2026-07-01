@@ -123,14 +123,21 @@ def cmd_run_daily(args, cfg):
 
     with open(PROMPT_PATH, encoding="utf-8") as f:
         prompt = f.read()
-    result = analyze_mod.analyze(handoff, prompt, cfg)
-    st.save_text(f"analysis_{end.isoformat()}.md", result["analysis_md"])
-    st.save_json(f"analysis_{end.isoformat()}.json", result)
+
+    analysis_md = ""
+    try:
+        result = analyze_mod.analyze(handoff, prompt, cfg)
+        analysis_md = result.get("analysis_md", "")
+        st.save_text(f"analysis_{end.isoformat()}.md", analysis_md)
+        st.save_json(f"analysis_{end.isoformat()}.json", result)
+    except Exception as exc:
+        log.warning("analyze 跳過（%s）；面板仍會產出", exc)
+        analysis_md = f"（分析未執行：{exc}）"
 
     if cfg.get("output", {}).get("render_html", True):
         out = os.path.join(cfg.get("output", {}).get("dir", "./out"),
                            f"panel_{end.isoformat()}.html")
-        render_mod.render(handoff, out, analysis_md=result.get("analysis_md", ""))
+        render_mod.render(handoff, out, analysis_md=analysis_md)
     print(f"run-daily 完成:{end.isoformat()}")
     # TODO(agent, P1): 依 signals 與 alert.webhook_url 發送告警。
 
