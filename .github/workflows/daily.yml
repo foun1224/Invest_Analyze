@@ -1,4 +1,5 @@
 name: chipflow-daily
+
 on:
   schedule:
     # 台北盤後(收盤+法人/期貨資料出齊後)。cron 為 UTC;09:30 UTC ≈ 台北 17:30。
@@ -8,6 +9,15 @@ on:
       date:
         description: "分析日期 YYYY-MM-DD(留空=今天)"
         required: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
 
 jobs:
   run:
@@ -19,20 +29,137 @@ jobs:
       ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
       - run: pip install -r requirements.txt
+
       - name: Resolve date
         id: d
-        run: echo "date=${{ github.event.inputs.date || '' }}" >> "$GITHUB_OUTPUT"
-      - name: Run daily
+        run: |
+          DATE="${{ github.event.inputs.date }}"
+          [ -z "$DATE" ] && DATE="$(date +%F)"
+          echo "date=$DATE" >> "$GITHUB_OUTPUT"
+
+      - name: Run daily pipeline
+        run: python -m chipflow.cli run-daily --date "${{ steps.d.outputs.date }}"
+
+      - name: Build Pages site
         run: |
           DATE="${{ steps.d.outputs.date }}"
-          [ -z "$DATE" ] && DATE="$(date +%F)"
-          python -m chipflow.cli run-daily --date "$DATE"
+          PANEL="out/panel_${DATE}.html"
+          ANALYSIS="out/analysis_${DATE}.md"
+
+          # 最新面板複製為 index.html
+          if [ -f "$PANEL" ]; then
+            cp "$PANEL" out/index.html
+          fi
+
+          # 產出一張輕量 listing 頁（含最新研判摘要）
+          python - <<'PYEOF'
+import os, glob, json, re
+from pathlib import Path
+
+out = Path("out")
+date_str = "${{ steps.d.outputs.date }}"
+
+# 讀研判摘要（取前 300 字）
+analysis_path = out / f"analysis_{date_str}.md"
+analysis_snippet = ""
+if analysis_path.exists():
+    text = analysis_path.read_text(encoding="utf-8")
+    analysis_snippet = text[:300].replace("<", "&lt;").replace(">", "&gt;")
+
+# 讀 signals
+handoff_path = out / f"handoff_{date_str}.json"
+signals_html = ""
+if handoff_path.exists():
+    h = json.loads(handoff_path.read_text())
+    triggered = [s for s in h.get("signals", []) if s.get("triggered")]
+    if triggered:
+        rows = "".join(
+            f"<tr><td>{s['name']}</td>"
+            f"<td style='color:{'#ef4444' if s['direction']=='bear' else '#22c55e' if s['direction']=='bull' else '#94a3b8'}'>"
+            f"{s['direction']}</td><td>{s['basis']}</td></tr>"
+            for s in triggered
+        )
+        signals_html = f"<table><thead><tr><th>訊號</th><th>方向</th><th>依據</th></tr></thead><tbody>{rows}</tbody></table>"
+
+# 歷史面板列表
+panels = sorted(out.glob("panel_*.html"), reverse=True)
+hist = "".join(
+    f'<li><a href="{p.name}">{p.stem.replace("panel_","")}</a></li>'
+    for p in panels[:30]
+)
+
+html = f"""<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>chipflow · 台股籌碼面板</title>
+<style>
+  body{{background:#0d0f14;color:#e8eaee;font-family:system-ui,sans-serif;max-width:900px;margin:0 auto;padding:24px}}
+  h1{{font-size:22px;margin-bottom:4px}} h2{{font-size:15px;color:#94a3b8;font-weight:400;margin-top:0}}
+  .btn{{display:inline-block;background:#3b82f6;color:#fff;padding:10px 22px;border-radius:8px;text-decoration:none;font-size:14px;margin:16px 0}}
+  .card{{background:#161a22;border:1px solid #252b36;border-radius:12px;padding:16px;margin:16px 0}}
+  pre{{white-space:pre-wrap;font-size:13px;color:#94a3b8;line-height:1.6}}
+  table{{border-collapse:collapse;width:100%;font-size:13px}} th,td{{padding:6px 10px;border:1px solid #252b36;text-align:left}}
+  th{{background:#1e2430;color:#94a3b8}} ul{{padding-left:20px;line-height:2}} a{{color:#60a5fa}}
+  .date{{color:#94a3b8;font-size:13px}}
+</style>
+</head>
+<body>
+<h1>chipflow 台股籌碼面板</h1>
+<h2>每日盤後自動分析 · 三大法人 / 期貨籌碼 / 外圍市場</h2>
+<p class="date">最新日期：{date_str}</p>
+<a class="btn" href="panel_{date_str}.html">開啟今日完整面板 →</a>
+
+<div class="card">
+  <b>觸發訊號</b>
+  {signals_html or '<p style="color:#94a3b8">無觸發訊號</p>'}
+</div>
+
+<div class="card">
+  <b>AI 研判摘要</b>
+  <pre>{analysis_snippet}{'…' if len(analysis_snippet) >= 300 else ''}</pre>
+  <a href="analysis_{date_str}.md">完整研判 →</a>
+</div>
+
+<div class="card">
+  <b>歷史面板</b>
+  <ul>{hist}</ul>
+</div>
+</body>
+</html>"""
+
+(out / "reports.html").write_text(html, encoding="utf-8")
+print("Pages site built.")
+PYEOF
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: out/
+
       - uses: actions/upload-artifact@v4
         with:
-          name: chipflow-out
+          name: chipflow-out-${{ steps.d.outputs.date }}
           path: out/
-          retention-days: 30
+          retention-days: 90
+
+  deploy:
+    needs: run
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
