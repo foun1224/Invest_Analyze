@@ -155,8 +155,12 @@ def cmd_render(args, cfg):
     import json
     with open(args.handoff, encoding="utf-8") as f:
         handoff = json.load(f)
+    analysis_md = ""
+    if getattr(args, "analysis", None) and os.path.exists(args.analysis):
+        with open(args.analysis, encoding="utf-8") as f:
+            analysis_md = f.read()
     out = args.out or args.handoff.replace(".json", ".html")
-    render_mod.render(handoff, out)
+    render_mod.render(handoff, out, analysis_md=analysis_md)
     print(f"panel -> {out}")
 
 
@@ -170,7 +174,7 @@ def main(argv=None):
     bf = sub.add_parser("backfill"); bf.add_argument("--start", required=True); bf.add_argument("--end", required=True)
     rd = sub.add_parser("run-daily"); rd.add_argument("--date", required=True)
     an = sub.add_parser("analyze"); an.add_argument("--handoff", required=True)
-    rn = sub.add_parser("render"); rn.add_argument("--handoff", required=True); rn.add_argument("--out")
+    rn = sub.add_parser("render"); rn.add_argument("--handoff", required=True); rn.add_argument("--out"); rn.add_argument("--analysis", help="analysis .md 路徑")
 
     args = p.parse_args(argv)
     cfg = load_config(args.config)

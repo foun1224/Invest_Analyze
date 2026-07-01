@@ -1,0 +1,86 @@
+name: chipflow-render
+
+# n8n 分析完後呼叫此 workflow 重新渲染 + 部署 Pages
+on:
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "分析日期 YYYY-MM-DD"
+        required: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TZ: Asia/Taipei
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt && pip install -e .
+
+      - name: Download today's artifact
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          workflow: daily.yml
+          name: chipflow-out-${{ github.event.inputs.date }}
+          path: out/
+        continue-on-error: true
+
+      - name: Fetch analysis from repo (written by n8n)
+        run: |
+          DATE="${{ github.event.inputs.date }}"
+          # analysis.md 由 n8n 透過 GitHub API commit 進來
+          if [ -f "analysis/${DATE}.md" ]; then
+            cp "analysis/${DATE}.md" "out/analysis_${DATE}.md"
+            echo "Analysis loaded from repo"
+          else
+            echo "No analysis found, rendering without it"
+          fi
+
+      - name: Render panel with analysis
+        run: |
+          DATE="${{ github.event.inputs.date }}"
+          python -m chipflow.cli render \
+            --handoff "out/handoff_${DATE}.json" \
+            --analysis "out/analysis_${DATE}.md" \
+            --out "out/panel_${DATE}.html"
+
+      - name: Copy latest panel to index.html
+        run: cp "out/panel_${{ github.event.inputs.date }}.html" out/index.html
+
+      - name: Build reports listing page
+        run: python scripts/build_site.py "${{ github.event.inputs.date }}"
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: out/
+
+  deploy:
+    needs: render
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

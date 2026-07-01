@@ -19,13 +19,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  run:
+  collect:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
       TZ: Asia/Taipei
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -43,13 +41,14 @@ jobs:
           [ -z "$DATE" ] && DATE="$(date +%F)"
           echo "date=$DATE" >> "$GITHUB_OUTPUT"
 
-      - name: Run daily pipeline
-        run: python -m chipflow.cli run-daily --date "${{ steps.d.outputs.date }}"
+      - name: Collect & build handoff.json
+        run: python -m chipflow.cli build-handoff --end "${{ steps.d.outputs.date }}"
+
+      - name: Render panel (no analysis yet)
+        run: python -m chipflow.cli render --handoff "out/handoff_${{ steps.d.outputs.date }}.json"
 
       - name: Copy latest panel to index.html
-        run: |
-          DATE="${{ steps.d.outputs.date }}"
-          [ -f "out/panel_${DATE}.html" ] && cp "out/panel_${DATE}.html" out/index.html
+        run: cp "out/panel_${{ steps.d.outputs.date }}.html" out/index.html 2>/dev/null || true
 
       - name: Build reports listing page
         run: python scripts/build_site.py "${{ steps.d.outputs.date }}"
@@ -70,7 +69,7 @@ jobs:
           retention-days: 90
 
   deploy:
-    needs: run
+    needs: collect
     runs-on: ubuntu-latest
     environment:
       name: github-pages
