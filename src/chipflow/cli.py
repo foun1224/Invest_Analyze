@@ -51,10 +51,12 @@ def _window_start(end: date, trading_days: int) -> date:
     return end - timedelta(days=int(trading_days * 1.7) + 7)
 
 
-def _http(cfg: dict) -> HttpClient:
+def _http(cfg: dict, source: str = "default") -> HttpClient:
     h = cfg.get("http", {})
+    # TAIFEX 對連續 POST 較敏感，用較長間隔避免 429
+    interval = h.get("taifex_min_interval_sec" if source == "taifex" else "min_interval_sec", 0.25)
     return HttpClient(HttpConfig(
-        min_interval_sec=h.get("min_interval_sec", 0.25),
+        min_interval_sec=interval,
         timeout_sec=h.get("timeout_sec", 25),
         max_retries=h.get("max_retries", 3),
         user_agent=h.get("user_agent", "Mozilla/5.0 (chipflow)"),
@@ -73,7 +75,8 @@ def do_build(start: date, end: date, cfg: dict) -> dict:
         outputs.append(tw.collect(start, end))
         composition = tw.get_composition(end)
     if sources_cfg.get("taifex", True):
-        outputs.append(TaifexCollector(http=http, cfg=collector_cfg).collect(start, end))
+        http_taifex = _http(cfg, source="taifex")
+        outputs.append(TaifexCollector(http=http_taifex, cfg=collector_cfg).collect(start, end))
     if sources_cfg.get("external", True):
         outputs.append(ExternalCollector(http=http, cfg=collector_cfg).collect(start, end))
 

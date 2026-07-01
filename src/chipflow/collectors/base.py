@@ -18,6 +18,7 @@ from datetime import date, timedelta
 from typing import Any
 
 import requests
+from requests.exceptions import HTTPError
 
 log = logging.getLogger("chipflow.collectors")
 
@@ -61,6 +62,18 @@ class HttpClient:
                 )
                 r.raise_for_status()
                 return r
+            except HTTPError as e:
+                last_exc = e
+                status = e.response.status_code if e.response is not None else 0
+                if status == 429:
+                    wait = 10 * attempt
+                    log.warning("HTTP %s %s 429 rate-limited, waiting %ds (attempt %d/%d)",
+                                method, url, wait, attempt, self.cfg.max_retries)
+                    time.sleep(wait)
+                else:
+                    log.warning("HTTP %s %s attempt %d/%d failed: %s",
+                                method, url, attempt, self.cfg.max_retries, e)
+                    time.sleep(0.4 * attempt)
             except Exception as e:  # noqa: BLE001
                 last_exc = e
                 log.warning("HTTP %s %s attempt %d/%d failed: %s",

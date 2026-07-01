@@ -5,7 +5,8 @@ window:
   trading_days: 32          # handoff 涵蓋的交易日數
 
 http:
-  min_interval_sec: 0.25    # 對 TWSE/TAIFEX 每請求最小間隔
+  min_interval_sec: 0.25          # TWSE 每請求最小間隔(秒)
+  taifex_min_interval_sec: 1.5   # TAIFEX 較敏感，用較長間隔避免 429
   timeout_sec: 25
   max_retries: 3
   user_agent: "Mozilla/5.0 (chipflow)"
