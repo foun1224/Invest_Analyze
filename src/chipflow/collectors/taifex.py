@@ -15,6 +15,7 @@ from .base import BaseCollector, trading_day_candidates, to_iso
 
 FUT_URL = "https://www.taifex.com.tw/cht/3/futContractsDate"
 FUT_DAILY_URL = "https://www.taifex.com.tw/cht/3/futDailyMarketExcel"
+NIGHT_URL = "https://www.taifex.com.tw/cht/3/afterHoursFutDailyMarketExcel"
 PCR_URL = "https://www.taifex.com.tw/cht/3/pcRatioExcel"
 
 
@@ -142,3 +143,47 @@ class TaifexCollector(BaseCollector):
                 pass  # 降級:pcr 留白,由 data_gaps 記錄
 
         return out
+
+    def collect_night(self, d: date) -> dict:
+        """抓取指定日期台指期(TX)夜盤行情；結果為單筆 dict，非時間序列。"""
+        result: dict = {"date": d.isoformat(), "close": None, "volume": None,
+                        "chg": None, "chg_pct": None}
+        html = self.http.post_html(
+            NIGHT_URL,
+            {"queryStartDate": d.strftime("%Y/%m/%d"),
+             "queryEndDate": d.strftime("%Y/%m/%d"),
+             "commodity_id": "TX"},
+            "https://www.taifex.com.tw/cht/3/afterHoursFutDailyMarket",
+        )
+        if not html:
+            return result
+        try:
+            tabs = [t for t in pd.read_html(io.StringIO(html)) if t.shape[1] >= 6]
+            if not tabs:
+                return result
+            for _, row in tabs[0].iterrows():
+                settle = None
+                for ci in (10, 6):
+                    if ci < len(row):
+                        try:
+                            v = float(str(row.iloc[ci]).replace(",", ""))
+                            if 10000 < v < 150000:
+                                settle = v
+                                break
+                        except (ValueError, TypeError):
+                            pass
+                if settle:
+                    result["close"] = settle
+                    for vi in (9, 8):
+                        if vi < len(row):
+                            try:
+                                vol = float(str(row.iloc[vi]).replace(",", ""))
+                                if vol > 0:
+                                    result["volume"] = int(vol)
+                                    break
+                            except (ValueError, TypeError):
+                                pass
+                    break  # 取近月(首筆)
+        except Exception:  # noqa: BLE001
+            pass
+        return result

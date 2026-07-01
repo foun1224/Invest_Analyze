@@ -65,6 +65,11 @@ _TMPL = """<!DOCTYPE html>
   <div class="sc" id="scorecard"></div>
 </div>
 
+<div class="card" id="nightcard" style="margin-top:12px;display:none">
+  <h2>台指期夜盤</h2>
+  <div class="sc" id="nightsc"></div>
+</div>
+
 <div class="grid" style="margin-top:12px">
   <div class="card">
     <h2>觸發訊號</h2>
@@ -134,16 +139,34 @@ SC_KEYS.forEach(({k,label,unit}) => {
 
 // Signals
 const sigEl = document.getElementById("signals");
-const triggered = (D.signals||[]).filter(s => s.triggered);
-if (!triggered.length) {
+const sigs = (D.signals||[]).filter(s => s.direction !== "neutral");
+if (!sigs.length) {
   sigEl.innerHTML = '<div style="color:#64748b;font-size:13px">無觸發訊號</div>';
 } else {
-  triggered.forEach(s => {
+  sigs.forEach(s => {
     const dir = s.direction;
-    const cls = dir==="bull"?"bull-bg":dir==="bear"?"bear-bg":"";
-    const label = dir==="bull"?"↑多":dir==="bear"?"↓空":"→";
-    sigEl.innerHTML += `<div class="sig"><span class="sig-dir ${cls}">${label}</span><span>${s.basis}</span></div>`;
+    const isBull = dir === "bullish" || dir === "neutral_bullish";
+    const isBear = dir === "bearish" || dir === "neutral_bearish";
+    const cls = isBull ? "bull-bg" : isBear ? "bear-bg" : "";
+    const label = isBull ? "↑多" : isBear ? "↓空" : "→";
+    sigEl.innerHTML += `<div class="sig"><span class="sig-dir ${cls}">${label}</span><span><b>${s.indicator}</b> ${s.reading}</span></div>`;
   });
+}
+
+// Overnight / 夜盤
+const night = D.overnight;
+if (night && night.close) {
+  document.getElementById("nightcard").style.display = "";
+  const nsc = document.getElementById("nightsc");
+  const chgClass = night.chg > 0 ? "bull" : night.chg < 0 ? "bear" : "";
+  const chgStr = night.chg !== null && night.chg !== undefined
+    ? `${night.chg > 0 ? "+" : ""}${night.chg}(${night.chg_pct > 0 ? "+" : ""}${night.chg_pct}%)`
+    : "—";
+  nsc.innerHTML = `
+    <div class="sc-item"><div class="sc-label">夜盤收盤</div><div class="sc-val">${night.close.toLocaleString("zh-TW")}</div></div>
+    <div class="sc-item"><div class="sc-label">vs日盤</div><div class="sc-val ${chgClass}">${chgStr}</div></div>
+    <div class="sc-item"><div class="sc-label">夜盤量(口)</div><div class="sc-val">${night.volume ? night.volume.toLocaleString("zh-TW") : "—"}</div></div>
+  `;
 }
 </script>
 </body>

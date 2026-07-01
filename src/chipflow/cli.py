@@ -151,6 +151,32 @@ def cmd_analyze(args, cfg):
     print(result["analysis_md"])
 
 
+def cmd_update_night(args, cfg):
+    """讀取既有 handoff.json，補入夜盤數據，重新儲存（不 render）。"""
+    import json
+    target_date = parse_date(args.date)
+    hp = args.handoff or os.path.join(
+        cfg.get("output", {}).get("dir", "./out"),
+        f"handoff_{target_date.isoformat()}.json")
+    with open(hp, encoding="utf-8") as f:
+        handoff = json.load(f)
+
+    http_taifex = _http(cfg, source="taifex")
+    night = TaifexCollector(http=http_taifex, cfg={}).collect_night(target_date)
+
+    idx_series = handoff.get("series", {}).get("index", [])
+    day_close = next((v for v in reversed(idx_series) if v is not None), None)
+    if day_close and night.get("close"):
+        night["chg"] = round(night["close"] - day_close, 0)
+        night["chg_pct"] = round((night["close"] - day_close) / day_close * 100, 2)
+
+    handoff["overnight"] = night
+    with open(hp, "w", encoding="utf-8") as f:
+        json.dump(handoff, f, ensure_ascii=False, indent=2)
+    log.info("夜盤數據已寫入: %s", night)
+    print(f"overnight -> {hp}  close={night.get('close')} chg={night.get('chg')}")
+
+
 def cmd_render(args, cfg):
     import json
     with open(args.handoff, encoding="utf-8") as f:
@@ -175,11 +201,13 @@ def main(argv=None):
     rd = sub.add_parser("run-daily"); rd.add_argument("--date", required=True)
     an = sub.add_parser("analyze"); an.add_argument("--handoff", required=True)
     rn = sub.add_parser("render"); rn.add_argument("--handoff", required=True); rn.add_argument("--out"); rn.add_argument("--analysis", help="analysis .md 路徑")
+    un = sub.add_parser("update-night"); un.add_argument("--date", required=True); un.add_argument("--handoff")
 
     args = p.parse_args(argv)
     cfg = load_config(args.config)
     {"build-handoff": cmd_build_handoff, "backfill": cmd_backfill,
-     "run-daily": cmd_run_daily, "analyze": cmd_analyze, "render": cmd_render}[args.cmd](args, cfg)
+     "run-daily": cmd_run_daily, "analyze": cmd_analyze, "render": cmd_render,
+     "update-night": cmd_update_night}[args.cmd](args, cfg)
 
 
 if __name__ == "__main__":

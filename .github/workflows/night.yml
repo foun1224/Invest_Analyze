@@ -1,0 +1,96 @@
+name: chipflow-night
+
+# 台北時間 05:30 = UTC 21:30，夜盤收盤後補抓數據
+on:
+  schedule:
+    - cron: "30 21 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "夜盤日期 YYYY-MM-DD（留空=昨天台北時間）"
+        required: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  update-night:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TZ: Asia/Taipei
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt && pip install -e .
+
+      - name: Resolve date (yesterday in Taipei time)
+        id: d
+        run: |
+          DATE="${{ github.event.inputs.date }}"
+          [ -z "$DATE" ] && DATE="$(date -d yesterday +%F)"
+          echo "date=$DATE" >> "$GITHUB_OUTPUT"
+
+      - name: Download day artifact
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          workflow: daily.yml
+          name: chipflow-out-${{ steps.d.outputs.date }}
+          path: out/
+        continue-on-error: true
+
+      - name: Fetch night session data
+        run: |
+          python -m chipflow.cli update-night \
+            --date "${{ steps.d.outputs.date }}" \
+            --handoff "out/handoff_${{ steps.d.outputs.date }}.json"
+
+      - name: Re-render panel with night data
+        run: |
+          python -m chipflow.cli render \
+            --handoff "out/handoff_${{ steps.d.outputs.date }}.json" \
+            --out "out/panel_${{ steps.d.outputs.date }}.html"
+
+      - name: Copy to index.html
+        run: cp "out/panel_${{ steps.d.outputs.date }}.html" out/index.html 2>/dev/null || true
+
+      - name: Build reports listing
+        run: python scripts/build_site.py "${{ steps.d.outputs.date }}"
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: out/
+
+      - name: Upload updated artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chipflow-out-${{ steps.d.outputs.date }}
+          path: out/
+          retention-days: 90
+          overwrite: true
+
+  deploy:
+    needs: update-night
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
