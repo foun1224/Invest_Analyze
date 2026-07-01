@@ -14,6 +14,7 @@ import pandas as pd
 from .base import BaseCollector, trading_day_candidates, to_iso
 
 FUT_URL = "https://www.taifex.com.tw/cht/3/futContractsDate"
+FUT_DAILY_URL = "https://www.taifex.com.tw/cht/3/futDailyMarketExcel"
 PCR_URL = "https://www.taifex.com.tw/cht/3/pcRatioExcel"
 
 
@@ -32,6 +33,7 @@ class TaifexCollector(BaseCollector):
     def collect(self, start: date, end: date) -> dict[str, dict[str, float]]:
         out: dict[str, dict[str, float]] = {
             "fut_oi": {}, "fut_trade_net": {}, "retail_mtx": {}, "pcr": {},
+            "fut_settle": {},
         }
         for d in trading_day_candidates(start, end):
             iso = to_iso(d)
@@ -73,6 +75,50 @@ class TaifexCollector(BaseCollector):
                         ok = False
                 if ok:
                     out["retail_mtx"][iso] = -法人
+
+        # 台指期(TX)每日結算價(區間;近月合約=每日首筆)
+        html_daily = self.http.post_html(
+            FUT_DAILY_URL,
+            {"queryStartDate": start.strftime("%Y/%m/%d"),
+             "queryEndDate": end.strftime("%Y/%m/%d"),
+             "commodity_id": "TX"},
+            "https://www.taifex.com.tw/cht/3/futDailyMarket",
+        )
+        if html_daily:
+            try:
+                tabs = [t for t in pd.read_html(io.StringIO(html_daily)) if t.shape[1] >= 8]
+                if tabs:
+                    for _, row in tabs[0].iterrows():
+                        try:
+                            raw = str(row.iloc[0]).strip()
+                            if "/" not in raw:
+                                continue
+                            parts = raw.split("/")
+                            if len(parts) != 3:
+                                continue
+                            y, m2, d2 = int(parts[0]), int(parts[1]), int(parts[2])
+                            if y < 200:
+                                y += 1911
+                            iso = f"{y:04d}-{m2:02d}-{d2:02d}"
+                            if iso in out["fut_settle"]:
+                                continue  # 保留近月(每日首筆)
+                            # 結算價優先 col 10;備用 col 6(收盤)
+                            settle = None
+                            for ci in (10, 6):
+                                if ci < len(row):
+                                    try:
+                                        v = float(str(row.iloc[ci]).replace(",", ""))
+                                        if 10000 < v < 150000:
+                                            settle = v
+                                            break
+                                    except (ValueError, TypeError):
+                                        pass
+                            if settle:
+                                out["fut_settle"][iso] = settle
+                        except Exception:  # noqa: BLE001
+                            continue
+            except Exception:  # noqa: BLE001
+                pass  # 降級:fut_settle 留白
 
         # 選擇權 P/C 未平倉比(單次抓區間;端點偶發不穩 -> 降級留白)
         html = self.http.post_html(
