@@ -15,7 +15,6 @@ from .base import BaseCollector, trading_day_candidates, to_iso
 
 FUT_URL = "https://www.taifex.com.tw/cht/3/futContractsDate"
 FUT_DAILY_URL = "https://www.taifex.com.tw/cht/3/futDailyMarketExcel"
-NIGHT_URL = "https://www.taifex.com.tw/cht/3/afterHoursFutDailyMarketExcel"
 PCR_URL = "https://www.taifex.com.tw/cht/3/pcRatioExcel"
 
 
@@ -77,7 +76,10 @@ class TaifexCollector(BaseCollector):
                 if ok:
                     out["retail_mtx"][iso] = -法人
 
-        # 台指期(TX)每日結算價(區間;近月合約=每日首筆)
+        # 台指期(TX)每日結算價(區間抓)
+        # 表格欄位: [0]契約 [1]到期月份 [2]開盤 [3]最高 [4]最低
+        #           [5]最後成交價 [6]漲跌 [7]漲跌% [8]夜盤量 [9]日盤量
+        #           [10]合計量 [11]結算價 [12]OI ...
         html_daily = self.http.post_html(
             FUT_DAILY_URL,
             {"queryStartDate": start.strftime("%Y/%m/%d"),
@@ -87,37 +89,16 @@ class TaifexCollector(BaseCollector):
         )
         if html_daily:
             try:
-                tabs = [t for t in pd.read_html(io.StringIO(html_daily)) if t.shape[1] >= 8]
+                tabs = [t for t in pd.read_html(io.StringIO(html_daily)) if t.shape[1] >= 12]
                 if tabs:
-                    for _, row in tabs[0].iterrows():
-                        try:
-                            raw = str(row.iloc[0]).strip()
-                            if "/" not in raw:
-                                continue
-                            parts = raw.split("/")
-                            if len(parts) != 3:
-                                continue
-                            y, m2, d2 = int(parts[0]), int(parts[1]), int(parts[2])
-                            if y < 200:
-                                y += 1911
-                            iso = f"{y:04d}-{m2:02d}-{d2:02d}"
-                            if iso in out["fut_settle"]:
-                                continue  # 保留近月(每日首筆)
-                            # 結算價優先 col 10;備用 col 6(收盤)
-                            settle = None
-                            for ci in (10, 6):
-                                if ci < len(row):
-                                    try:
-                                        v = float(str(row.iloc[ci]).replace(",", ""))
-                                        if 10000 < v < 150000:
-                                            settle = v
-                                            break
-                                    except (ValueError, TypeError):
-                                        pass
-                            if settle:
-                                out["fut_settle"][iso] = settle
-                        except Exception:  # noqa: BLE001
-                            continue
+                    # 每日只取第一筆(近月合約)
+                    row = tabs[0].iloc[0]
+                    try:
+                        v = float(str(row.iloc[11]).replace(",", ""))
+                        if 10000 < v < 150000:
+                            out["fut_settle"][end.isoformat()] = v
+                    except (ValueError, TypeError):
+                        pass
             except Exception:  # noqa: BLE001
                 pass  # 降級:fut_settle 留白
 
@@ -145,45 +126,39 @@ class TaifexCollector(BaseCollector):
         return out
 
     def collect_night(self, d: date) -> dict:
-        """抓取指定日期台指期(TX)夜盤行情；結果為單筆 dict，非時間序列。"""
+        """抓取指定日期台指期(TX)夜盤行情；使用 futDailyMarketExcel。
+        表格欄位: [5]最後成交價 [8]*盤後交易時段成交量 [9]日盤量 [11]結算價
+        """
         result: dict = {"date": d.isoformat(), "close": None, "volume": None,
                         "chg": None, "chg_pct": None}
         html = self.http.post_html(
-            NIGHT_URL,
+            FUT_DAILY_URL,
             {"queryStartDate": d.strftime("%Y/%m/%d"),
              "queryEndDate": d.strftime("%Y/%m/%d"),
              "commodity_id": "TX"},
-            "https://www.taifex.com.tw/cht/3/afterHoursFutDailyMarket",
+            "https://www.taifex.com.tw/cht/3/futDailyMarket",
         )
         if not html:
             return result
         try:
-            tabs = [t for t in pd.read_html(io.StringIO(html)) if t.shape[1] >= 6]
+            tabs = [t for t in pd.read_html(io.StringIO(html)) if t.shape[1] >= 12]
             if not tabs:
                 return result
-            for _, row in tabs[0].iterrows():
-                settle = None
-                for ci in (10, 6):
-                    if ci < len(row):
-                        try:
-                            v = float(str(row.iloc[ci]).replace(",", ""))
-                            if 10000 < v < 150000:
-                                settle = v
-                                break
-                        except (ValueError, TypeError):
-                            pass
-                if settle:
-                    result["close"] = settle
-                    for vi in (9, 8):
-                        if vi < len(row):
-                            try:
-                                vol = float(str(row.iloc[vi]).replace(",", ""))
-                                if vol > 0:
-                                    result["volume"] = int(vol)
-                                    break
-                            except (ValueError, TypeError):
-                                pass
-                    break  # 取近月(首筆)
+            row = tabs[0].iloc[0]  # 近月合約首筆
+            # 最後成交價 col[5]（夜盤結束後即為夜盤收盤）
+            try:
+                v = float(str(row.iloc[5]).replace(",", ""))
+                if 10000 < v < 150000:
+                    result["close"] = v
+            except (ValueError, TypeError):
+                pass
+            # 夜盤成交量 col[8]
+            try:
+                vol = float(str(row.iloc[8]).replace(",", ""))
+                if vol >= 0:
+                    result["volume"] = int(vol)
+            except (ValueError, TypeError):
+                pass
         except Exception:  # noqa: BLE001
             pass
         return result
