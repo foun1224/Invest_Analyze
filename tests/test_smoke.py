@@ -8,6 +8,13 @@ def test_cumsum_handles_nulls():
     assert pipeline._cumsum([1.0, None, 2.0]) == [1.0, 1.0, 3.0]
 
 
+def test_cumsum_all_null_stays_null_no_fabricated_zero():
+    """全 null 日值不得產出 0.0 累計（避免假水位／假 bullish）。"""
+    assert pipeline._cumsum([None, None, None]) == [None, None, None]
+    # 前綴 null 仍為 null，有值後才起算
+    assert pipeline._cumsum([None, 1.0, None, 2.0]) == [None, 1.0, 1.0, 3.0]
+
+
 def test_master_dates_from_foreign():
     merged = {"foreign_daily": {"2026-06-30": 1.0, "2026-06-29": 2.0}}
     assert pipeline.master_dates(merged) == ["2026-06-29", "2026-06-30"]

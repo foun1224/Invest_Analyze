@@ -29,7 +29,11 @@ external_symbols:           # 可增減
 
 # derive 訊號門檻(初始值,建議觀察 N 日分佈後收斂)
 signal_thresholds:
-  foreign_fut_oi_daily_spike: 6000      # 外資台指期單日 OI 變化(口)超過→告警
+  foreign_fut_oi_daily_spike: 6000      # 外資台指期單日 OI 變化(口)超過→告警/轉折
+  foreign_fut_oi_multi_day_deepen: 10000  # 近 N 日期貨淨空加深/收斂門檻(口)
+  fut_oi_multi_window_days: 5           # 期貨 OI 多日比較窗
+  flow_window_days: 5                   # 現貨近 N 日淨流向窗（轉折對照前 N 日）
+  consecutive_days: 3                   # 連續買賣超天數視為趨勢延續/強化
   margin_fin_high_watermark_yi: 6000    # 融資餘額(億元)警戒
   sox_ma_days: 20                       # 費半均線天數
   pcr_bearish: 150

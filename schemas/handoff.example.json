@@ -1126,8 +1126,37 @@
       "rationale": "外流壓力有限,無急貶/資金逃亡"
     }
   ],
+  "fund_flow_regime": {
+    "stance": "bearish_exit",
+    "action_hint": "風險轉空，出場警戒（研判非下單保證）",
+    "direction": "bearish",
+    "regime_label": "偏空／出場警戒",
+    "summary": "偏空／出場警戒。外資現貨bearish(近5日持續淨賣)。期貨OI bearish(淨空加深)。三大法人合計偏流出。看多日流向轉折，非單日淨額。",
+    "triggers": [
+      {
+        "indicator": "外資現貨流向轉折",
+        "reading": "近5日淨賣；連多日賣超",
+        "direction": "bearish",
+        "rationale": "近窗淨賣與連續賣超；趨勢轉折，非單日"
+      },
+      {
+        "indicator": "外資台指期OI轉折",
+        "reading": "-83063口(區間淨空加深)",
+        "direction": "bearish",
+        "rationale": "淨空加深；負=淨空、加深=出場側風險"
+      }
+    ],
+    "components": {
+      "foreign_spot": {"direction": "bearish", "reading": "近5日淨賣"},
+      "foreign_futures_oi": {"direction": "bearish", "reading": "-83063口"},
+      "institutional_spot": {"direction": "bearish", "reading": "近5日淨流出"},
+      "trust_spot": {"direction": "bullish", "reading": "投信續買支撐"}
+    },
+    "data_complete": true,
+    "score": -4
+  },
   "thesis": {
-    "regime": "高檔對峙/區間震盪",
+    "regime": "偏空／出場警戒（輔助格局：高檔對峙/區間震盪）",
     "core_insight": "半導體多頭(SOX+34.5%、ADR溢價+26%)撐住台股最大權值,是外資狂賣仍抗跌的根本;外資賣的是金融傳產(T86證實)非權值電子,對指數殺傷力有限;台幣未急貶、櫃買強、個股空單回補=無資金逃亡。",
     "bull_case": "底層需求真實+廣度以外的權值有全球資金撐。外資台指期-83k淨空=潛在軋空燃料;若站穩46,500並帶量突破47,741,+台積電本地補漲,可望再創高。",
     "bear_case": "外資雙邊避險(現貨賣+期貨加空)+散戶融資過熱+ADL廣度背離+量縮+估值墊高+VIX過低(無戒心)。若費半反轉抽掉支撐,超槓桿融資盤恐引發較猛的斷頭修正。",

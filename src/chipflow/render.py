@@ -45,6 +45,12 @@ _TMPL = """<!DOCTYPE html>
 <h1>chipflow 台股籌碼面板</h1>
 <div class="sub">as of __AS_OF__ &nbsp;|&nbsp; <a href="reports.html">← 返回列表</a></div>
 
+<div class="card" id="flowcard" style="margin-bottom:12px;display:none">
+  <h2>三大法人 · 資金風險狀態</h2>
+  <div class="sc" id="flowsc"></div>
+  <div class="md" id="flowsum" style="margin-top:8px"></div>
+</div>
+
 <div class="grid">
   <div class="card" style="grid-column:1/-1">
     <h2>加權指數 / 外資現貨累計</h2>
@@ -114,6 +120,20 @@ mkChart("cC",
    ln("US10Y%", D.series.us10y, "#38bdf8", "yR")],
   {x:xc, yL:{position:"left",...yc("#a78bfa")}, yR:{position:"right",...yc("#38bdf8"),grid:{drawOnChartArea:false}}}
 );
+
+// 資金風險狀態（入場/出場研判）
+const flow = D.fund_flow_regime;
+if (flow && flow.stance) {
+  document.getElementById("flowcard").style.display = "";
+  const dir = flow.direction || "neutral";
+  const cls = dir === "bullish" ? "bull" : dir === "bearish" ? "bear" : "neutral";
+  const complete = flow.data_complete === false ? "（資料不完整）" : "";
+  document.getElementById("flowsc").innerHTML = `
+    <div class="sc-item"><div class="sc-label">狀態</div><div class="sc-val ${cls}">${flow.regime_label||flow.stance}</div></div>
+    <div class="sc-item"><div class="sc-label">研判</div><div class="sc-val ${cls}">${flow.action_hint||""}${complete}</div></div>
+  `;
+  document.getElementById("flowsum").textContent = flow.summary || "";
+}
 
 // Scorecard
 const SC_KEYS = [

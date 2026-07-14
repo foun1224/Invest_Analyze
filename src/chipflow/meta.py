@@ -14,6 +14,12 @@ CONVENTIONS = {
     "external_calendar": "sox/ndx/dxy/tnx/vix 為美股交易日,與台股可能小幅錯位",
     "series_alignment": "所有序列已對齊 labels(台股交易日 MM/DD);缺值以 null 表示",
     "adr_premium": "台積電ADR溢價% = (TSM/5 * USDTWD)/2330 - 1;正=ADR溢價",
+    "fund_flow_regime": (
+        "fund_flow_regime 為三大法人資金風險狀態(研判非下單)。"
+        "stance: bullish_entry=偏多/入場可考慮; bearish_exit=偏空/出場警戒; "
+        "neutral_watch=中性/觀望; data_insufficient=核心序列缺值。"
+        "依多日現貨淨額轉折+外資台指期OI變化推導,不單看累計正負號。"
+    ),
 }
 
 FIELD_LEGEND = {

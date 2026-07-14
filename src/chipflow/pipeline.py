@@ -9,6 +9,8 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+from .fund_flow import fund_flow_regime
+
 
 # ---------------------------------------------------------------- align
 def merge_sources(sources: list[dict[str, dict[str, float]]]) -> dict[str, dict[str, float]]:
@@ -34,11 +36,15 @@ def align_series(merged: dict, key: str, dates: list[str]) -> list[float | None]
 
 
 def _cumsum(daily: list[float | None]) -> list[float | None]:
-    out, run = [], 0.0
+    """累計；中段缺日沿用前值。尚未出現任何有效日值前保持 null（不捏造 0）。"""
+    out: list[float | None] = []
+    run = 0.0
+    has_value = False
     for v in daily:
         if v is None:
-            out.append(round(run, 1))  # 缺日沿用前值,不新增
+            out.append(round(run, 1) if has_value else None)
         else:
+            has_value = True
             run += v
             out.append(round(run, 1))
     return out
@@ -56,7 +62,8 @@ def summary_stats(series: dict[str, list], keys: list[str]) -> dict[str, dict]:
     return stats
 
 
-def signals(series: dict[str, list], snapshot: dict, cfg: dict) -> list[dict]:
+def signals(series: dict[str, list], snapshot: dict, cfg: dict,
+            flow: dict | None = None) -> list[dict]:
     th = cfg.get("signal_thresholds", {})
     out: list[dict] = []
 
@@ -68,19 +75,37 @@ def signals(series: dict[str, list], snapshot: dict, cfg: dict) -> list[dict]:
         v = [x for x in series.get(k, []) if x is not None]
         return v[-n] if len(v) >= n else (v[0] if v else None)
 
-    # 外資現貨(累計)
+    # 資金風險狀態（多日轉折；入場/出場研判）
+    if flow is not None:
+        out.append({
+            "indicator": "資金風險狀態",
+            "reading": flow.get("regime_label", flow.get("stance", "")),
+            "direction": flow.get("direction", "neutral"),
+            "rationale": flow.get("summary", flow.get("action_hint", "")),
+        })
+        for tr in flow.get("triggers") or []:
+            # 避免與下方累計水位重複：只收「轉折」類 indicator
+            if "轉折" in tr.get("indicator", "") or "合計" in tr.get("indicator", ""):
+                out.append({
+                    "indicator": tr["indicator"],
+                    "reading": tr["reading"],
+                    "direction": tr["direction"],
+                    "rationale": tr["rationale"],
+                })
+
+    # 外資現貨(累計水位；輔助，不主導進出場)
     fc = last("foreign_cum")
     if fc is not None:
         out.append({"indicator": "外資現貨累計", "reading": f"{fc:+.0f}億",
                     "direction": "bearish" if fc < 0 else "bullish",
-                    "rationale": "外資現貨累計買賣超；正=淨買"})
+                    "rationale": "區間累計水位（輔助）；進出場以「資金風險狀態」多日轉折為準"})
 
-    # 外資台指期未平倉
+    # 外資台指期未平倉(水位)
     oi = last("fut_oi")
     if oi is not None:
         out.append({"indicator": "外資台指期", "reading": f"{oi:,}口",
                     "direction": "bearish" if oi < 0 else "bullish",
-                    "rationale": "外資台指期未平倉多空淨額；負=淨空"})
+                    "rationale": "未平倉淨額水位；負=淨空。轉折見「外資台指期OI轉折」"})
 
     # 期現貨基差（正價差/逆價差）
     basis = last("basis")
@@ -279,13 +304,39 @@ def build_handoff(merged: dict, as_of: date, window_start: date,
     # data_gaps:完全無值的維度(誠實記錄,不補假值)
     data_gaps = [k for k in SERIES_KEYS if not any(x is not None for x in series.get(k, []))]
 
-    sigs = signals(series, {}, cfg)
+    # 三大法人資金風險狀態（多日轉折；入場/出場研判）
+    flow = fund_flow_regime(
+        foreign_daily=a["foreign_daily"],
+        trust_daily=a["trust_daily"],
+        dealer_daily=a["dealer_daily"],
+        fut_oi=a["fut_oi"],
+        cfg=cfg,
+    )
+    # 缺核心籌碼時，在 data_gaps 補註（series 維度名）
+    if not any(x is not None for x in a["foreign_daily"]):
+        if "foreign_cum" not in data_gaps:
+            data_gaps.append("foreign_cum")
+    if not any(x is not None for x in a["fut_oi"]):
+        if "fut_oi" not in data_gaps:
+            data_gaps.append("fut_oi")
+
+    sigs = signals(series, {}, cfg, flow=flow)
     kl = cfg.get("key_levels", {})
+
+    # thesis：以資金流向狀態為主軸 regime；其餘訊號作輔助格局
+    aux_regime = regime_from_signals(
+        [s for s in sigs if s.get("indicator") not in (
+            "資金風險狀態", "外資現貨流向轉折", "外資台指期OI轉折", "三大法人現貨合計流向", "投信現貨流向"
+        )]
+    )
+    thesis_regime = flow["regime_label"]
+    if flow["stance"] == "neutral_watch" and aux_regime:
+        thesis_regime = f"{flow['regime_label']}（輔助格局：{aux_regime}）"
 
     handoff = {
         "schema_version": "1.0",
         "report_type": "taiwan_equity_chip_flow_analysis",
-        "purpose": "供 AI 接續分析用的自我描述資料包。",
+        "purpose": "供 AI 接續分析用的自我描述資料包。含三大法人資金風險狀態（入場/出場研判，非下單）。",
         "as_of_date": as_of.isoformat(),
         "generated_at": meta.get("generated_at", ""),
         "language": "zh-Hant",
@@ -300,12 +351,32 @@ def build_handoff(merged: dict, as_of: date, window_start: date,
         "series": {k: series.get(k) for k in SERIES_KEYS},
         "summary_stats": summary_stats(series, SERIES_KEYS),
         "signals": sigs,
+        "fund_flow_regime": {
+            "stance": flow["stance"],
+            "action_hint": flow["action_hint"],
+            "direction": flow["direction"],
+            "regime_label": flow["regime_label"],
+            "summary": flow["summary"],
+            "triggers": flow["triggers"],
+            "components": flow["components"],
+            "data_complete": flow["data_complete"],
+            "score": flow["score"],
+        },
         "thesis": {
-            "regime": regime_from_signals(sigs),
-            "core_insight": "(規則式骨架;由 analyze/LLM 依 signals 與 series 充實)",
-            "bull_case": "(pending LLM)",
-            "bear_case": "(pending LLM)",
-            "net_read": "(pending LLM)",
+            "regime": thesis_regime,
+            "core_insight": flow["summary"],
+            "bull_case": (
+                flow["action_hint"] if flow["stance"] == "bullish_entry"
+                else "待外資現貨連續買超或近窗淨額翻正、且期貨空單收斂，才偏多方資金面。"
+            ),
+            "bear_case": (
+                flow["action_hint"] if flow["stance"] == "bearish_exit"
+                else "待外資現貨連續賣超或近窗淨額翻負、且期貨淨空加深，才偏空方風險面。"
+            ),
+            "net_read": (
+                f"{flow['regime_label']}。{flow['action_hint']}"
+                + ("" if flow["data_complete"] else "（核心維度有缺，勿當完整訊號）")
+            ),
         },
         "key_levels": {
             "range_low": kl.get("range_low", min([x for x in series["index"] if x] or [0])),

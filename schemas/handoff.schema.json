@@ -77,6 +77,40 @@
         }
       }
     },
+    "fund_flow_regime": {
+      "type": "object",
+      "description": "三大法人資金流向多日轉折推導的風險狀態（研判用，非下單保證）。看趨勢不卡單日。",
+      "required": ["stance", "action_hint", "direction", "regime_label", "summary", "triggers", "data_complete"],
+      "properties": {
+        "stance": {
+          "type": "string",
+          "enum": ["bullish_entry", "bearish_exit", "neutral_watch", "data_insufficient"]
+        },
+        "action_hint": { "type": "string" },
+        "direction": {
+          "type": "string",
+          "enum": ["bullish", "bearish", "neutral"]
+        },
+        "regime_label": { "type": "string" },
+        "summary": { "type": "string" },
+        "triggers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["indicator", "reading", "direction", "rationale"],
+            "properties": {
+              "indicator": { "type": "string" },
+              "reading": { "type": "string" },
+              "direction": { "type": "string" },
+              "rationale": { "type": "string" }
+            }
+          }
+        },
+        "components": { "type": "object" },
+        "data_complete": { "type": "boolean" },
+        "score": { "type": "number" }
+      }
+    },
     "thesis": {
       "type": "object",
       "required": ["regime", "bull_case", "bear_case", "net_read"],
