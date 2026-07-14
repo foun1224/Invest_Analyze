@@ -50,7 +50,12 @@ class HttpClient:
         self.cfg = cfg
         self.limiter = RateLimiter(cfg.min_interval_sec)
         self.session = requests.Session()
-        self.session.headers.update({"User-Agent": cfg.user_agent})
+        # 真實瀏覽器標頭：TWSE 對極簡 UA 常回 HTML/擋爬，導致 Non-JSON
+        self.session.headers.update({
+            "User-Agent": cfg.user_agent,
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "Accept-Language": "zh-TW,zh;q=0.9,en;q=0.8",
+        })
 
     def _request(self, method: str, url: str, **kw) -> requests.Response | None:
         last_exc: Exception | None = None

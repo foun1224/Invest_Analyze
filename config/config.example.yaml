@@ -9,7 +9,8 @@ http:
   taifex_min_interval_sec: 1.5   # TAIFEX 較敏感，用較長間隔避免 429
   timeout_sec: 25
   max_retries: 3
-  user_agent: "Mozilla/5.0 (chipflow)"
+  # 過簡 UA 易被 TWSE 回 HTML；請用瀏覽器級 UA
+  user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 sources:
   twse: true

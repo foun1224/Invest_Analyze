@@ -17,23 +17,77 @@ if analysis_path.exists():
     text = analysis_path.read_text(encoding="utf-8")
     analysis_snippet = text[:300].replace("<", "&lt;").replace(">", "&gt;")
 
-# 讀 signals
+# 讀 handoff：資金風險狀態 + signals
 handoff_path = out / f"handoff_{date_str}.json"
 signals_html = ""
+flow_html = ""
 if handoff_path.exists():
-    h = json.loads(handoff_path.read_text())
-    triggered = [s for s in h.get("signals", []) if s.get("triggered")]
-    if triggered:
+    h = json.loads(handoff_path.read_text(encoding="utf-8"))
+    fr = h.get("fund_flow_regime") or {}
+    if fr.get("stance"):
+        dir_ = fr.get("direction") or "neutral"
+        color = (
+            "#22c55e" if dir_ == "bullish"
+            else "#ef4444" if dir_ == "bearish"
+            else "#94a3b8"
+        )
+        complete = "" if fr.get("data_complete", True) else "（資料不完整）"
+        triggers_rows = ""
+        for t in fr.get("triggers") or []:
+            td = t.get("direction") or "neutral"
+            tc = (
+                "#22c55e" if td == "bullish"
+                else "#ef4444" if td == "bearish"
+                else "#94a3b8"
+            )
+            triggers_rows += (
+                f"<tr><td>{t.get('indicator','')}</td>"
+                f"<td style='color:{tc}'>{td}</td>"
+                f"<td>{t.get('reading','')}</td></tr>"
+            )
+        trig_table = ""
+        if triggers_rows:
+            trig_table = (
+                "<table style='margin-top:10px'><thead><tr>"
+                "<th>流向訊號</th><th>方向</th><th>讀數</th></tr></thead>"
+                f"<tbody>{triggers_rows}</tbody></table>"
+            )
+        flow_html = f"""
+<div style="border-left:4px solid {color};padding-left:12px;margin:8px 0">
+  <div style="font-size:20px;font-weight:700;color:{color}">
+    {fr.get('regime_label') or fr.get('stance')}
+  </div>
+  <div style="color:#cbd5e1;margin-top:6px">{fr.get('action_hint','')}{complete}</div>
+  <div style="color:#94a3b8;font-size:13px;margin-top:8px;line-height:1.6">
+    {(fr.get('summary') or '').replace('<','&lt;').replace('>','&gt;')}
+  </div>
+  {trig_table}
+</div>
+"""
+        if not analysis_snippet and fr.get("summary"):
+            analysis_snippet = (fr.get("summary") or "")[:300].replace("<", "&lt;").replace(">", "&gt;")
+
+    # signals：handoff 用 indicator/reading/direction/rationale
+    sigs = [
+        s for s in h.get("signals", [])
+        if s.get("direction") not in (None, "neutral")
+    ]
+    if sigs:
         rows = ""
-        for s in triggered:
-            color = "#ef4444" if s["direction"] == "bear" else "#22c55e" if s["direction"] == "bull" else "#94a3b8"
+        for s in sigs[:20]:
+            d = s.get("direction", "")
+            color = (
+                "#ef4444" if "bear" in d
+                else "#22c55e" if "bull" in d
+                else "#94a3b8"
+            )
             rows += (
-                f"<tr><td>{s['name']}</td>"
-                f"<td style='color:{color}'>{s['direction']}</td>"
-                f"<td>{s['basis']}</td></tr>"
+                f"<tr><td>{s.get('indicator','')}</td>"
+                f"<td style='color:{color}'>{d}</td>"
+                f"<td>{s.get('reading','')}</td></tr>"
             )
         signals_html = (
-            "<table><thead><tr><th>訊號</th><th>方向</th><th>依據</th></tr></thead>"
+            "<table><thead><tr><th>訊號</th><th>方向</th><th>讀數</th></tr></thead>"
             f"<tbody>{rows}</tbody></table>"
         )
 
@@ -72,21 +126,27 @@ html = f"""<!DOCTYPE html>
 <h2>每日盤後自動分析 · 三大法人 / 期貨籌碼 / 外圍市場</h2>
 <p class="date">最新日期：{date_str}</p>
 <a class="btn" href="panel_{date_str}.html">開啟今日完整面板 →</a>
+<a class="btn" href="index.html" style="background:#1e2430;margin-left:8px">index 面板</a>
 
 <div class="card">
-  <b>觸發訊號</b>
-  {signals_html if signals_html else '<p style="color:#94a3b8">無觸發訊號</p>'}
+  <b>三大法人 · 資金風險狀態</b>
+  {flow_html if flow_html else '<p style="color:#94a3b8">尚無 fund_flow_regime（請確認 handoff 已含此欄）</p>'}
 </div>
 
 <div class="card">
-  <b>AI 研判摘要</b>
-  <pre>{analysis_snippet}{ellipsis}</pre>
-  <a href="analysis_{date_str}.md">完整研判 →</a>
+  <b>觸發訊號</b>
+  {signals_html if signals_html else '<p style="color:#94a3b8">無非中性訊號</p>'}
+</div>
+
+<div class="card">
+  <b>研判摘要</b>
+  <pre>{analysis_snippet if analysis_snippet else "（尚無 LLM 研判；見上方資金風險狀態）"}{ellipsis}</pre>
+  {"<a href='analysis_" + date_str + ".md'>完整研判 →</a>" if analysis_path.exists() else ""}
 </div>
 
 <div class="card">
   <b>歷史面板</b>
-  <ul>{hist}</ul>
+  <ul>{hist if hist else "<li style='color:#94a3b8'>尚無歷史</li>"}</ul>
 </div>
 </body>
 </html>"""
