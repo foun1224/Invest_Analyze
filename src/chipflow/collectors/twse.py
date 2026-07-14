@@ -28,7 +28,7 @@ class TwseCollector(BaseCollector):
             k: {} for k in (
                 "foreign_daily", "trust_daily", "dealer_daily",
                 "index", "volume",
-                "margin_fin", "margin_short", "sbl",
+                "margin_fin", "margin_short", "sbl", "margin_maint",
                 "breadth_up", "breadth_dn",
                 "pe", "pb", "yd",
             )
@@ -78,18 +78,27 @@ class TwseCollector(BaseCollector):
                 if ds is not None and dh is not None:
                     out["dealer_daily"][iso] = round((ds + dh) / 1e8, 1)
 
-            # MI_MARGN 融資融券
+            # MI_MARGN 融資融券(selectType=ALL:表0=彙總,表1=逐檔融資餘額,供維持率計算)
+            fin_raw: float | None = None       # 融資餘額 仟元(原始值)
+            margin_shares: dict[str, float] = {}  # 代號 -> 融資今日餘額(張)
             data = self.http.get_json(
-                f"{TWSE}/marginTrading/MI_MARGN?date={ymd}&selectType=MS&response=json")
+                f"{TWSE}/marginTrading/MI_MARGN?date={ymd}&selectType=ALL&response=json")
             if data and data.get("stat") == "OK":
                 try:
                     rows = data["tables"][0]["data"]
-                    fin = num(rows[2][5])
+                    fin_raw = num(rows[2][5])
                     short = num(rows[1][5])
-                    if fin is not None:
-                        out["margin_fin"][iso] = round(fin / 1e5, 1)  # 仟元 -> 億元
+                    if fin_raw is not None:
+                        out["margin_fin"][iso] = round(fin_raw / 1e5, 1)  # 仟元 -> 億元
                     if short is not None:
                         out["margin_short"][iso] = short
+                except (KeyError, IndexError):
+                    pass
+                try:
+                    for r in data["tables"][1]["data"]:
+                        bal = num(r[6])  # 融資今日餘額(張)
+                        if bal and bal > 0:
+                            margin_shares[str(r[0]).strip()] = bal
                 except (KeyError, IndexError):
                     pass
 
@@ -104,12 +113,14 @@ class TwseCollector(BaseCollector):
                         total += v
                 out["sbl"][iso] = round(total / 1e8, 1)  # 股 -> 億股
 
-            # MI_INDEX 漲跌家數
+            # MI_INDEX 漲跌家數 + 全部收盤價(type=ALLBUT0999 同時涵蓋兩者)
             data = self.http.get_json(
-                f"{TWSE}/afterTrading/MI_INDEX?date={ymd}&type=MS&response=json")
+                f"{TWSE}/afterTrading/MI_INDEX?date={ymd}&type=ALLBUT0999&response=json")
             if data and data.get("stat") == "OK":
+                closes: dict[str, float] = {}
                 for tb in data.get("tables", []):
-                    if str(tb.get("title", "")) == "漲跌證券數合計":
+                    title = str(tb.get("title", ""))
+                    if title == "漲跌證券數合計":
                         rows = {r[0]: r for r in tb["data"]}
                         try:
                             up = int(rows["上漲(漲停)"][2].split("(")[0].replace(",", ""))
@@ -118,7 +129,20 @@ class TwseCollector(BaseCollector):
                             out["breadth_dn"][iso] = dn
                         except (KeyError, ValueError, IndexError):
                             pass
-                        break
+                    elif "每日收盤行情" in title:
+                        for r in tb["data"]:
+                            c = num(r[8])
+                            if c and c > 0:
+                                closes[str(r[0]).strip()] = c
+
+                # 大盤融資維持率估計 = Σ(融資餘額張×1000×收盤價)/融資餘額金額
+                if fin_raw and margin_shares and closes:
+                    collateral = sum(
+                        bal * 1000 * closes[code]
+                        for code, bal in margin_shares.items() if code in closes)
+                    if collateral > 0:
+                        out["margin_maint"][iso] = round(
+                            collateral / (fin_raw * 1000) * 100, 1)
 
             # BWIBBU 估值中位數
             data = self.http.get_json(
@@ -126,6 +150,8 @@ class TwseCollector(BaseCollector):
             if data and data.get("stat") == "OK":
                 pe, pb, yd = [], [], []
                 for r in data["data"]:
+                    if len(r) < 7:
+                        continue
                     p, b, y = num(r[5]), num(r[6]), num(r[3])
                     if p and p > 0:
                         pe.append(p)

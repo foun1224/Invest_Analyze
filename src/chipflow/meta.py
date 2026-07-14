@@ -24,6 +24,7 @@ FIELD_LEGEND = {
     "fut_oi": "外資 台指期(TX)未平倉多空淨額(口)",
     "retail_mtx": "散戶 小型台指未平倉淨額(口);正=淨多",
     "margin_fin": "融資餘額(億元)", "margin_short": "融券餘額(張)",
+    "margin_maint": "大盤融資維持率(%)=Σ(融資餘額股數×收盤價)/融資餘額金額;新倉基準166.7%",
     "sbl": "借券賣出餘額(億股)",
     "pcr": "選擇權Put/Call未平倉比(%);>150偏悲觀,<100偏樂觀",
     "pe": "全體上市 本益比 中位數", "pb": "全體上市 股價淨值比 中位數",
@@ -38,7 +39,7 @@ FIELD_LEGEND = {
 DATA_SOURCES = [
     {"name": "TWSE BFI82U", "use": "三大法人買賣金額(現貨)"},
     {"name": "TWSE FMTQIK", "use": "加權指數收盤/成交量"},
-    {"name": "TWSE MI_MARGN", "use": "融資融券餘額"},
+    {"name": "TWSE MI_MARGN", "use": "融資融券餘額 + 逐檔融資餘額(維持率分子)"},
     {"name": "TWSE TWT93U", "use": "借券賣出餘額(逐檔加總)"},
     {"name": "TWSE MI_INDEX", "use": "漲跌家數→ADL"},
     {"name": "TWSE BWIBBU_d", "use": "個股P/E/P/B/殖利率→中位數"},

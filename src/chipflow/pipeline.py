@@ -112,6 +112,21 @@ def signals(series: dict[str, list], snapshot: dict, cfg: dict) -> list[dict]:
                     "direction": "bearish" if fin >= hw else "neutral",
                     "rationale": f"散戶槓桿水位；>{hw}億過熱"})
 
+    # 大盤融資維持率（擔保市值/融資金額；新倉基準166.7%）
+    mm = last("margin_maint")
+    mm5 = prev("margin_maint")
+    if mm is not None:
+        chg = (mm - mm5) if mm5 is not None else 0.0
+        if mm < 160 or chg < -8:
+            direction = "bearish"
+        elif mm >= 175 and chg >= 0:
+            direction = "bullish"
+        else:
+            direction = "neutral"
+        out.append({"indicator": "融資維持率", "reading": f"{mm:.1f}%(近5日{chg:+.1f})",
+                    "direction": direction,
+                    "rationale": "全市場融資擔保市值/融資金額；<160%警戒、急降代表多殺多風險，>175%安全墊厚"})
+
     # 融券趨勢（千股；看方向而非絕對值）
     short_amt = last("margin_short")
     short5 = prev("margin_short")
@@ -211,7 +226,7 @@ def regime_from_signals(sigs: list[dict]) -> str:
 SERIES_KEYS = [
     "index", "volume", "foreign_cum", "trust_cum", "dealer_cum", "fut_oi",
     "fut_settle", "basis",
-    "retail_mtx", "margin_fin", "margin_short", "sbl", "pcr", "pe", "pb", "yd",
+    "retail_mtx", "margin_fin", "margin_short", "margin_maint", "sbl", "pcr", "pe", "pb", "yd",
     "sox", "ndx", "dxy", "tnx", "vix", "adr_prem", "otc", "fx", "adl",
 ]
 
@@ -224,7 +239,7 @@ def build_handoff(merged: dict, as_of: date, window_start: date,
     # 對齊各原始序列
     a = {k: align_series(merged, k, dates) for k in [
         "index", "volume", "foreign_daily", "trust_daily", "dealer_daily",
-        "fut_oi", "fut_settle", "retail_mtx", "margin_fin", "margin_short", "sbl", "pcr",
+        "fut_oi", "fut_settle", "retail_mtx", "margin_fin", "margin_short", "margin_maint", "sbl", "pcr",
         "pe", "pb", "yd", "sox", "ndx", "otc", "dxy", "tnx", "vix",
         "tsm", "t2330", "usdtwd",
     ]}
@@ -238,6 +253,7 @@ def build_handoff(merged: dict, as_of: date, window_start: date,
         "fut_oi": a["fut_oi"], "fut_settle": a["fut_settle"],
         "retail_mtx": a["retail_mtx"],
         "margin_fin": a["margin_fin"], "margin_short": a["margin_short"],
+        "margin_maint": a["margin_maint"],
         "sbl": a["sbl"], "pcr": a["pcr"],
         "pe": a["pe"], "pb": a["pb"], "yd": a["yd"],
         "sox": a["sox"], "ndx": a["ndx"], "dxy": a["dxy"], "tnx": a["tnx"],

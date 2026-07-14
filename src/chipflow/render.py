@@ -120,6 +120,7 @@ const SC_KEYS = [
   {k:"index",      label:"加權指數",  unit:""},
   {k:"foreign_cum",label:"外資累計",  unit:"億"},
   {k:"fut_oi",     label:"外資TX未平倉",unit:"口"},
+  {k:"margin_maint",label:"融資維持率",unit:""},
   {k:"vix",        label:"VIX",      unit:""},
   {k:"us10y",      label:"US10Y",    unit:"%"},
   {k:"usdtwd",     label:"USDTWD",   unit:""},
